@@ -2,10 +2,10 @@
 #include <BLEDevice.h>
 #include <BLEUtils.h>
 #include <BLEServer.h>
-#include <WiFi.h>
-
-// #include "CustomServerCallbacks.h"
+#include <GSON.h>
 #include <UserDataCharacteristicsCallbacks.h>
+#include <WiFi.h>
+#include <Workflow.h>
 
 // Set LED_BUILTIN if it is not defined by Arduino framework
 #ifndef LED_BUILTIN
@@ -48,6 +48,28 @@ void initBLE()
     Serial.println("BLE service advertisement started.");
 }
 
+void initWifi()
+{
+    std::string wifiJson(Workflow::Data, Workflow::Data + Workflow::DataLength);
+    GSON::Parser parser;
+    parser.parse(wifiJson.c_str());
+
+    wl_status_t connectionState = WiFi.begin(parser["Ssid"], parser["Password"]);
+
+    while(true)
+    {
+        if (connectionState == WL_CONNECTED)
+        {
+            digitalWrite(LED_BUILTIN, HIGH);
+        }
+        else
+        {
+            digitalWrite(LED_BUILTIN, !digitalRead(LED_BUILTIN));
+            delay(500);
+        }
+    }
+}
+
 void setup()
 {
     // enable serial port
@@ -61,5 +83,10 @@ void setup()
 
 void loop()
 {
+    if (Workflow::State == WorkflowState::WIFI_CREDENTIALS_RECEIVED)
+    {
+        initWifi();
+    }
+
     delay(1000);
 }
