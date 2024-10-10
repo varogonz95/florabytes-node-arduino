@@ -1,8 +1,8 @@
-#include "UserDataCharacteristicsCallbacks.h"
-
 #include <Arduino.h>
+#include <GSON.h>
 #include <Workflow.h>
 
+#include "UserDataCharacteristicsCallbacks.h"
 
 UserDataCharacteristicsCallbacks::UserDataCharacteristicsCallbacks()
 {
@@ -36,11 +36,14 @@ void UserDataCharacteristicsCallbacks::onWrite(BLECharacteristic *pCharacteristi
 {
     try
     {
+        Serial.println("Write requested.");
+
         Workflow::Data = param->write.value;
         Workflow::DataLength = param->write.len;
+        Workflow::State = WIFI_CREDENTIALS_RECEIVED;
 
-        Serial.println("Write requested.");
-        Serial.printf("Data length: %d\n", param->write.len);
+        // Serial.printf("Workflow::Data: %s\n", Workflow::Data == nullptr? "empty" : "has data");
+        // Serial.printf("Workflow::DataLength: %d\n", Workflow::DataLength);
     }
     catch (const std::exception &e)
     {
