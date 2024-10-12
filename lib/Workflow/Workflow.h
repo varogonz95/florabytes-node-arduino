@@ -1,3 +1,5 @@
+#include <memory>
+
 enum WorkflowState
 {
     NONE,
@@ -10,8 +12,15 @@ enum WorkflowState
 class Workflow
 {
 private:
+    static WorkflowState m_state;
+    static std::shared_ptr<uint8_t> m_data;
+    static uint32_t m_dataLength;
+
 public:
-    static WorkflowState State;
-    static unsigned char *Data;
-    static unsigned int DataLength;
+    static void setData(uint8_t *m_data, uint32_t length);
+    static std::shared_ptr<uint8_t> getData();
+    static uint32_t getDataLength();
+
+    static void setState(WorkflowState state);
+    static WorkflowState getState();
 };
