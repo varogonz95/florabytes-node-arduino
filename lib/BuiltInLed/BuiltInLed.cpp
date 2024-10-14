@@ -7,27 +7,27 @@
 #define LED_BUILTIN 2
 #endif
 
-void BuilInLed::setup()
+void BuiltInLed::setup()
 {
     pinMode(LED_BUILTIN, OUTPUT);
 }
 
-void BuilInLed::on()
+void BuiltInLed::on()
 {
     digitalWrite(LED_BUILTIN, HIGH);
 }
 
-void BuilInLed::off()
+void BuiltInLed::off()
 {
     digitalWrite(LED_BUILTIN, LOW);
 }
 
-void BuilInLed::toggle()
+void BuiltInLed::toggle()
 {
     digitalWrite(LED_BUILTIN, !digitalRead(LED_BUILTIN));
 }
 
-void BuilInLed::blink(uint32_t duration, uint32_t times, uint8_t initState)
+void BuiltInLed::blink(uint32_t duration, uint32_t times, uint8_t initState)
 {
     digitalWrite(LED_BUILTIN, initState);
     for (size_t i = 0; i < times * 2; i++)

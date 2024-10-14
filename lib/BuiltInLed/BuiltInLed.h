@@ -1,6 +1,6 @@
 #include <stdlib.h>
 
-class BuilInLed
+class BuiltInLed
 {
 private:
     /* data */
