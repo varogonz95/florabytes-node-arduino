@@ -16,9 +16,7 @@ void UserDataCharacteristicsCallbacks::onWrite(BLECharacteristic *pCharacteristi
 
     auto rawData = param->write.value;
     auto len = param->write.len;
-    std::string wifiJson(rawData, rawData + len);
-    auto rawJson = wifiJson.c_str();
-    Workflow::setData((uint8_t*)rawJson, len);
+    Workflow::setData(rawData, len);
     Workflow::setState(WIFI_CREDENTIALS_RECEIVED);
 }
 

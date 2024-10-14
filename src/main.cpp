@@ -48,57 +48,26 @@ void initBLE()
     Serial.println("BLE service advertisement started.");
 }
 
-void initWifi()
+void connectToWifi(String ssid, String pwd)
 {
-    auto wfDataPtr = Workflow::getData();
-    auto rawData = wfDataPtr.get();
-    auto len = Workflow::getDataLength();
-    Serial.printf("Wifi Credentials received:\n%s\n", rawData);
-
-    GSON::Parser parser;
-    parser.parse((const char *)rawData);
-    // wfDataPtr.reset();
-
-    if (parser.hasError())
-    {
-        Serial.printf("Could not parse WiFi credentials. Reason: %s\n", parser.readError());
-        throw std::runtime_error("Could not parse WiFi credentials.");
-    }
-
-    auto ssid = parser["Ssid"];
-    auto pwd = parser["Password"];
-
-    Serial.println("Connecting to Wifi network:");
-    Serial.printf("Ssid: %s\n", ssid.c_str());
-    Serial.printf("Password: %s\n", pwd.c_str());
-
-    auto isSTAEnabled = WiFi.enableSTA(true);
-
-    wl_status_t connectionState = WL_IDLE_STATUS;
-    if (isSTAEnabled)
-        connectionState = WiFi.begin(ssid, pwd);
-    else
+    if (!WiFi.enableSTA(true))
         throw std::runtime_error("Could not enable WiFi in STA mode.");
 
-    while (true)
+    Serial.printf("Connecting to [%s]  network", ssid);
+    WiFi.begin(ssid, pwd);
+    
+    while (WiFi.status() != WL_CONNECTED)
     {
-        if (WL_CONNECTED == connectionState)
-        {
-            WiFi.setAutoReconnect(true);
-            BuilInLed::on();
-            break;
-        }
-        else if (WL_CONNECT_FAILED == WiFi.status())
-        {
-            throw std::runtime_error("Could not connect to WiFi network.");
-        }
-        else
-            BuilInLed::toggle();
-
+        BuiltInLed::toggle();
+        Serial.print(".");
         delay(500);
     }
 
-    Serial.println("Wifi connected.");
+    WiFi.setAutoReconnect(true);
+    BuiltInLed::on();
+
+    Serial.println("WiFi connected, IP address: " + WiFi.localIP().toString());
+    Workflow::setState(WIFI_CONNECTED);
 }
 
 void setup()
@@ -106,7 +75,7 @@ void setup()
     // enable serial port
     Serial.begin(115200);
 
-    BuilInLed::setup();
+    BuiltInLed::setup();
 
     initBLE();
 }
@@ -116,19 +85,52 @@ void loop()
     switch (Workflow::getState())
     {
     case BLE_WAITING_TO_PAIR:
-        BuilInLed::toggle();
+    {
+        BuiltInLed::toggle();
         delay(1000);
-        break;
+    }
+    break;
 
     case BLE_PAIRED:
-        BuilInLed::blink(200, 3);
+    {
+        BuiltInLed::blink(200, 3);
         delay(500);
-        break;
+    }
+    break;
 
     case WIFI_CREDENTIALS_RECEIVED:
-        BLEDevice::stopAdvertising();
-        pService->stop();
-        initWifi();
+    {
+        auto wfDataPtr = Workflow::getData();
+        auto rawData = wfDataPtr.get();
+        auto len = Workflow::getDataLength();
+        std::string wifiJson(rawData, rawData + len);
+        auto rawJson = wifiJson.c_str();
+        Serial.printf("Wifi Credentials received:\n%s\n", rawJson);
+
+        GSON::Parser parser;
+        parser.parse(rawJson);
+        wfDataPtr.reset();
+
+        if (parser.hasError())
+        {
+            Serial.printf("Could not parse WiFi credentials. Reason: %s\n", parser.readError());
+            throw std::runtime_error("Could not parse WiFi credentials.");
+        }
+
+        auto ssid = parser["Ssid"].toString();
+        auto pwd = parser["Password"].toString();
+
+        // Free BLE memory stack before enabling WiFi
+        BLEDevice::deinit(true);
+
+        connectToWifi(ssid, pwd);
+    }
+    break;
+
+    case WIFI_CONNECTED:
+    {
+    }
+    break;
 
     default:
         delay(1000);
