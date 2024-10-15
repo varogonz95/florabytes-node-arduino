@@ -1,8 +1,9 @@
 // Copyright (c) Microsoft Corporation. All rights reserved.
 // SPDX-License-Identifier: MIT
 
-#include "SerialLogger.h"
 #include <time.h>
+
+#include "AzSerialLogger.h"
 
 #define UNIX_EPOCH_START_YEAR 1900
 
@@ -44,7 +45,12 @@ static void writeTime()
   Serial.print(ptm->tm_sec);
 }
 
-SerialLogger::SerialLogger() { Serial.begin(SERIAL_LOGGER_BAUD_RATE); }
+SerialLogger::SerialLogger() { }
+
+void SerialLogger::Begin(unsigned long baudRate)
+{
+    Serial.begin(baudRate);
+}
 
 void SerialLogger::Info(String message)
 {
@@ -60,4 +66,5 @@ void SerialLogger::Error(String message)
   Serial.println(message);
 }
 
-SerialLogger Logger;
+SerialLogger AzLogger;
+

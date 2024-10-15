@@ -14,10 +14,11 @@ class SerialLogger
 {
 public:
   SerialLogger();
+  static void Begin(unsigned long baudRate);
   void Info(String message);
   void Error(String message);
 };
 
-extern SerialLogger Logger;
+extern SerialLogger AzLogger;
 
 #endif // SERIALLOGGER_H
