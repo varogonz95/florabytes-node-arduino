@@ -1,5 +1,6 @@
 #include <Arduino.h>
 #include <BLEDevice.h>
+#include <SerialLogger.h>
 #include <Workflow.h>
 
 #include "CustomBleServerCallbacks.h"
@@ -10,7 +11,7 @@ CustomBleServerCallbacks::CustomBleServerCallbacks()
 
 void CustomBleServerCallbacks::onConnect(BLEServer *pServer)
 {
-    Serial.println("BLE: Client connected.");
+    Logger.Info(" [BLE Server] Client connected.");
     Workflow::setState(BLE_PAIRED);
 }
 
@@ -23,8 +24,8 @@ void CustomBleServerCallbacks::onConnect(BLEServer *pServer, esp_ble_gatts_cb_pa
 
 void CustomBleServerCallbacks::onDisconnect(BLEServer *pServer)
 {
-    Serial.println("BLE: Client disconnected.");
-    Workflow::setState(BLE_WAITING_TO_PAIR);
+    Logger.Info(" [BLE Server] Client disconnected.");
+    Workflow::setState(BLE_ADVERTISING);
 }
 
 void CustomBleServerCallbacks::onDisconnect(BLEServer *pServer, esp_ble_gatts_cb_param_t *param)
@@ -39,7 +40,7 @@ void CustomBleServerCallbacks::onDisconnect(BLEServer *pServer, esp_ble_gatts_cb
 
 void CustomBleServerCallbacks::onMtuChanged(BLEServer *pServer, esp_ble_gatts_cb_param_t *param)
 {
-    Serial.println("BLE: MTU Changed");
+    Logger.Info(" [BLE Server] MTU Changed");
 }
 
 CustomBleServerCallbacks::~CustomBleServerCallbacks()

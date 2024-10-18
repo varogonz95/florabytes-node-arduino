@@ -1,5 +1,5 @@
 #include <Arduino.h>
-// #include <GSON.h>
+#include <SerialLogger.h>
 #include <Workflow.h>
 
 #include "UserDataCharacteristicsCallbacks.h"
@@ -12,8 +12,7 @@ void UserDataCharacteristicsCallbacks::onRead(BLECharacteristic *pCharacteristic
 
 void UserDataCharacteristicsCallbacks::onWrite(BLECharacteristic *pCharacteristic, esp_ble_gatts_cb_param_t *param)
 {
-    Serial.println("Write requested.");
-
+    Logger.Info(" [BLE Charactersitic] Write requested.");
     auto rawData = param->write.value;
     auto len = param->write.len;
     Workflow::setData(rawData, len);
