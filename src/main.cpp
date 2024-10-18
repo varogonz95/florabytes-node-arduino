@@ -1,29 +1,3 @@
-// Copyright (c) Microsoft Corporation. All rights reserved.
-// SPDX-License-Identifier: MIT
-
-/*
- * This is an Arduino-based Azure IoT Hub sample for ESPRESSIF ESP32 boards.
- * It uses our Azure Embedded SDK for C to help interact with Azure IoT.
- * For reference, please visit https://github.com/azure/azure-sdk-for-c.
- *
- * To connect and work with Azure IoT Hub you need an MQTT client, connecting, subscribing
- * and publishing to specific topics to use the messaging features of the hub.
- * Our azure-sdk-for-c is an MQTT client support library, helping composing and parsing the
- * MQTT topic names and messages exchanged with the Azure IoT Hub.
- *
- * This sample performs the following tasks:
- * - Synchronize the device clock with a NTP server;
- * - Initialize our "az_iot_hub_client" (struct for data, part of our azure-sdk-for-c);
- * - Initialize the MQTT client (here we use ESPRESSIF's esp_mqtt_client, which also handle the tcp
- * connection and TLS);
- * - Connect the MQTT client (using server-certificate validation, SAS-tokens for client
- * authentication);
- * - Periodically send telemetry data to the Azure IoT Hub.
- *
- * To properly connect to your Azure IoT Hub, please fill the information in the `iot_configs.h`
- * file.
- */
-
 #include <Arduino.h>
 
 // BLE advertisement libraries
@@ -31,6 +5,7 @@
 #include <BLEServer.h>
 #include <CustomBleServerCallbacks.h>
 #include <UserDataCharacteristicsCallbacks.h>
+
 // C99 libraries
 #include <cstdlib>
 #include <string.h>
@@ -44,11 +19,14 @@
 #include <az_core.h>
 #include <az_iot.h>
 #include <azure_ca.h>
+#include <az_result_codes.h>
 #include <AzIoTSasToken.h>
-#include <AzSerialLogger.h>
 #include <AzureIotHubConfigs.h>
 
-// Additional libraries
+// Additional helpers and utils
+#include <BuiltInLed.h>
+#include <GSON.h>
+#include <SerialLogger.h>
 #include <Workflow.h>
 
 // When developing for your own Arduino-based platform,
@@ -73,12 +51,16 @@
 #define BLE_SERVICE_UUID "0000181c-0000-1000-8000-00805f9b34fb"
 #define BLE_CHARACTERISTIC_UUID "00002a9f-0000-1000-8000-00805f9b34fb"
 
+// Wifi stuff
+#define SSID_IDX 0
+#define PWD_IDX 1
+
 // Translate iot_configs.h defines into variables used by the sample
-static char *ssid = IOT_CONFIG_WIFI_SSID;
-static char *password = IOT_CONFIG_WIFI_PASSWORD;
+static String ssid = IOT_CONFIG_WIFI_SSID;
+static String password = IOT_CONFIG_WIFI_PASSWORD;
+static const char *device_id = WiFi.macAddress().c_str();
 static const char *host = IOT_CONFIG_IOTHUB_FQDN;
 static const char *mqtt_broker_uri = "mqtts://" IOT_CONFIG_IOTHUB_FQDN;
-static const char *device_id = IOT_CONFIG_DEVICE_ID;
 static const int mqtt_port = AZ_IOT_DEFAULT_MQTT_CONNECT_PORT;
 
 // Memory allocated for the sample's variables and structures.
@@ -87,7 +69,7 @@ static az_iot_hub_client client;
 
 static char mqtt_client_id[128];
 static char mqtt_username[128];
-static char mqtt_password[200];
+static char mqtt_password[256];
 static uint8_t sas_signature_buffer[256];
 static unsigned long next_telemetry_send_time_ms = 0;
 static char telemetry_topic[128];
@@ -106,47 +88,91 @@ static AzIoTSasToken sasToken(
     AZ_SPAN_FROM_BUFFER(mqtt_password));
 #endif // IOT_CONFIG_USE_X509_CERT
 
-static void connectToWiFi()
+static std::tuple<String, String> getWifiTuple()
 {
-    AzLogger.Info("Connecting to WIFI SSID " + String(ssid));
+    auto wfDataPtr = Workflow::getData();
+    auto rawData = wfDataPtr.get();
+    auto len = Workflow::getDataLength();
+    std::string wifiJson(rawData, rawData + len);
+    auto rawJson = wifiJson.c_str();
+    Serial.printf("Wifi Credentials received:\n%s\n", rawJson);
+
+    GSON::Parser parser;
+    parser.parse(rawJson);
+    wfDataPtr.reset();
+
+    if (parser.hasError())
+    {
+        Serial.printf("Could not parse WiFi credentials. Reason: %s\n", parser.readError());
+        throw std::runtime_error("Could not parse WiFi credentials.");
+    }
+
+    auto ssid = parser["Ssid"].toString();
+    auto pwd = parser["Password"].toString();
+
+    return std::make_tuple(ssid, pwd);
+}
+
+static void connectToWiFi(String ssid, String password)
+{
+    Logger.Info("Connecting to WIFI SSID " + ssid);
 
     WiFi.mode(WIFI_STA);
     WiFi.disconnect();
     delay(100);
-    WiFi.begin(ssid, password);
 
-    while (WiFi.status() != WL_CONNECTED)
+    WiFi.begin(ssid, password);
+    const uint max_retries = 5;
+    const uint conn_check_cycle = 500;
+    uint retriesCount = max_retries * (1000 / conn_check_cycle);
+    wl_status_t status;
+
+    while (retriesCount-- > 0 || status != WL_CONNECTED)
     {
-        delay(500);
+        BuiltInLed::toggle();
+        status = status = WiFi.status();
+
         Serial.print(".");
+        delay(conn_check_cycle);
+    }
+
+    if (status == WL_CONNECT_FAILED)
+    {
+        BuiltInLed::off();
+        char *fmtError;
+        sprintf(fmtError, "Could not connect to [%s] network. Reason: %s", ssid.c_str(), String(status));
+        throw std::runtime_error(fmtError);
     }
 
     Serial.println("");
+    Logger.Info("WiFi connected, IP address: " + WiFi.localIP().toString());
 
-    AzLogger.Info("WiFi connected, IP address: " + WiFi.localIP().toString());
+    BuiltInLed::on();
+    Workflow::setState(WIFI_CONNECTED);
 }
 
 static void initializeTime()
 {
-    AzLogger.Info("Setting time using SNTP");
+    Logger.Info("Setting time using SNTP");
 
     configTime(GMT_OFFSET_SECS, GMT_OFFSET_SECS_DST, NTP_SERVERS);
     time_t now = time(NULL);
     while (now < UNIX_TIME_NOV_13_2017)
     {
+        BuiltInLed::toggle();
         delay(500);
         Serial.print(".");
         now = time(nullptr);
     }
     Serial.println("");
-    AzLogger.Info("Time initialized!");
+    Logger.Info("Time initialized!");
 }
 
 void receivedCallback(char *topic, byte *payload, unsigned int length)
 {
-    AzLogger.Info("Received [");
-    AzLogger.Info(topic);
-    AzLogger.Info("]: ");
+    Logger.Info("Received [");
+    Logger.Info(topic);
+    Logger.Info("]: ");
     for (int i = 0; i < length; i++)
     {
         Serial.print((char)payload[i]);
@@ -171,57 +197,57 @@ static esp_err_t mqtt_event_handler(esp_mqtt_event_handle_t event)
         int i, r;
 
     case MQTT_EVENT_ERROR:
-        AzLogger.Info("MQTT event MQTT_EVENT_ERROR");
+        Logger.Info("MQTT event MQTT_EVENT_ERROR");
         break;
     case MQTT_EVENT_CONNECTED:
-        AzLogger.Info("MQTT event MQTT_EVENT_CONNECTED");
+        Logger.Info("MQTT event MQTT_EVENT_CONNECTED");
 
         r = esp_mqtt_client_subscribe(mqtt_client, AZ_IOT_HUB_CLIENT_C2D_SUBSCRIBE_TOPIC, 1);
         if (r == -1)
         {
-            AzLogger.Error("Could not subscribe for cloud-to-device messages.");
+            Logger.Error("Could not subscribe for cloud-to-device messages.");
         }
         else
         {
-            AzLogger.Info("Subscribed for cloud-to-device messages; message id:" + String(r));
+            Logger.Info("Subscribed for cloud-to-device messages; message id:" + String(r));
         }
 
         break;
     case MQTT_EVENT_DISCONNECTED:
-        AzLogger.Info("MQTT event MQTT_EVENT_DISCONNECTED");
+        Logger.Info("MQTT event MQTT_EVENT_DISCONNECTED");
         break;
     case MQTT_EVENT_SUBSCRIBED:
-        AzLogger.Info("MQTT event MQTT_EVENT_SUBSCRIBED");
+        Logger.Info("MQTT event MQTT_EVENT_SUBSCRIBED");
         break;
     case MQTT_EVENT_UNSUBSCRIBED:
-        AzLogger.Info("MQTT event MQTT_EVENT_UNSUBSCRIBED");
+        Logger.Info("MQTT event MQTT_EVENT_UNSUBSCRIBED");
         break;
     case MQTT_EVENT_PUBLISHED:
-        AzLogger.Info("MQTT event MQTT_EVENT_PUBLISHED");
+        Logger.Info("MQTT event MQTT_EVENT_PUBLISHED");
         break;
     case MQTT_EVENT_DATA:
-        AzLogger.Info("MQTT event MQTT_EVENT_DATA");
+        Logger.Info("MQTT event MQTT_EVENT_DATA");
 
         for (i = 0; i < (INCOMING_DATA_BUFFER_SIZE - 1) && i < event->topic_len; i++)
         {
             incoming_data[i] = event->topic[i];
         }
         incoming_data[i] = '\0';
-        AzLogger.Info("Topic: " + String(incoming_data));
+        Logger.Info("Topic: " + String(incoming_data));
 
         for (i = 0; i < (INCOMING_DATA_BUFFER_SIZE - 1) && i < event->data_len; i++)
         {
             incoming_data[i] = event->data[i];
         }
         incoming_data[i] = '\0';
-        AzLogger.Info("Data: " + String(incoming_data));
+        Logger.Info("Data: " + String(incoming_data));
 
         break;
     case MQTT_EVENT_BEFORE_CONNECT:
-        AzLogger.Info("MQTT event MQTT_EVENT_BEFORE_CONNECT");
+        Logger.Info("MQTT event MQTT_EVENT_BEFORE_CONNECT");
         break;
     default:
-        AzLogger.Error("MQTT event UNKNOWN");
+        Logger.Error("MQTT event UNKNOWN");
         break;
     }
 
@@ -233,36 +259,34 @@ static esp_err_t mqtt_event_handler(esp_mqtt_event_handle_t event)
 
 static void initializeIoTHubClient()
 {
-    az_iot_hub_client_options options = az_iot_hub_client_options_default();
-    options.user_agent = AZ_SPAN_FROM_STR(AZURE_SDK_CLIENT_USER_AGENT);
-
     if (az_result_failed(az_iot_hub_client_init(
             &client,
             az_span_create((uint8_t *)host, strlen(host)),
             az_span_create((uint8_t *)device_id, strlen(device_id)),
-            &options)))
+            NULL)))
     {
-        AzLogger.Error("Failed initializing Azure IoT Hub client");
-        return;
+        Logger.Error("Failed initializing Azure IoT Hub client");
+        throw std::runtime_error("");
     }
 
     size_t client_id_length;
     if (az_result_failed(az_iot_hub_client_get_client_id(
             &client, mqtt_client_id, sizeof(mqtt_client_id) - 1, &client_id_length)))
     {
-        AzLogger.Error("Failed getting client id");
-        return;
+        Logger.Error("Failed getting client id");
+        throw std::runtime_error("");
     }
 
+    // Get the MQTT user name used to connect to IoT Hub
     if (az_result_failed(az_iot_hub_client_get_user_name(
             &client, mqtt_username, sizeofarray(mqtt_username), NULL)))
     {
-        AzLogger.Error("Failed to get MQTT clientId, return code");
-        return;
+        Logger.Error("Failed to get MQTT clientId, return code");
+        throw std::runtime_error("");
     }
 
-    AzLogger.Info("Client ID: " + String(mqtt_client_id));
-    AzLogger.Info("Username: " + String(mqtt_username));
+    Logger.Info("Client ID: " + String(mqtt_client_id));
+    Logger.Info("Username: " + String(mqtt_username));
 }
 
 static int initializeMqttClient()
@@ -270,7 +294,7 @@ static int initializeMqttClient()
 #ifndef IOT_CONFIG_USE_X509_CERT
     if (sasToken.Generate(SAS_TOKEN_DURATION_IN_MINUTES) != 0)
     {
-        AzLogger.Error("Failed generating SAS token");
+        Logger.Error("Failed generating SAS token");
         return 1;
     }
 #endif
@@ -324,7 +348,7 @@ static int initializeMqttClient()
 
     if (mqtt_client == NULL)
     {
-        AzLogger.Error("Failed creating mqtt client");
+        Logger.Error("Failed creating mqtt client");
         return 1;
     }
 
@@ -336,12 +360,12 @@ static int initializeMqttClient()
 
     if (start_result != ESP_OK)
     {
-        AzLogger.Error("Could not start mqtt client; error code:" + start_result);
+        Logger.Error("Could not start mqtt client; error code:" + start_result);
         return 1;
     }
     else
     {
-        AzLogger.Info("MQTT client started");
+        Logger.Info("MQTT client started");
         return 0;
     }
 }
@@ -354,8 +378,8 @@ static uint32_t getEpochTimeInSecs() { return (uint32_t)time(NULL); }
 
 static void establishConnection()
 {
-    connectToWiFi();
     initializeTime();
+    Serial.println(" [APP] After Time init Free memory: " + String(esp_get_free_heap_size()) + " bytes");
     initializeIoTHubClient();
     (void)initializeMqttClient();
 }
@@ -371,7 +395,7 @@ static void generateTelemetryPayload()
 
 static void sendTelemetry()
 {
-    AzLogger.Info("Sending telemetry ...");
+    Logger.Info("Sending telemetry ...");
 
     // The topic could be obtained just once during setup,
     // however if properties are used the topic need to be generated again to reflect the
@@ -379,7 +403,7 @@ static void sendTelemetry()
     if (az_result_failed(az_iot_hub_client_telemetry_get_publish_topic(
             &client, NULL, telemetry_topic, sizeof(telemetry_topic), NULL)))
     {
-        AzLogger.Error("Failed az_iot_hub_client_telemetry_get_publish_topic");
+        Logger.Error("Failed az_iot_hub_client_telemetry_get_publish_topic");
         return;
     }
 
@@ -393,11 +417,11 @@ static void sendTelemetry()
             MQTT_QOS1,
             DO_NOT_RETAIN_MSG) == 0)
     {
-        AzLogger.Error("Failed publishing");
+        Logger.Error("Failed publishing");
     }
     else
     {
-        AzLogger.Info("Message published successfully");
+        Logger.Info("Message published successfully");
     }
 }
 
@@ -407,9 +431,7 @@ static BLEService *pService = nullptr;
 static void initializeBLEAdvertisement()
 {
     Serial.println("Initializing BLE service.");
-
-    std::string macAddress(WiFi.macAddress().c_str());
-    BLEDevice::init("FloraBytes" + macAddress);
+    BLEDevice::init("FloraBytes (" + std::string(device_id) + ")");
 
     pServer = BLEDevice::createServer();
     pService = pServer->createService(BLE_SERVICE_UUID);
@@ -432,7 +454,7 @@ static void initializeBLEAdvertisement()
     pAdvertising->start();
     // BLEDevice::startAdvertising();
 
-    Workflow::setState(BLE_WAITING_TO_PAIR);
+    Workflow::setState(BLE_ADVERTISING);
     Serial.println("BLE service advertisement started.");
 }
 
@@ -440,29 +462,71 @@ static void initializeBLEAdvertisement()
 
 void setup()
 {
-    AzLogger.Begin(SERIAL_LOGGER_BAUD_RATE);
-    
+    Logger.Begin(SERIAL_LOGGER_BAUD_RATE);
+    BuiltInLed::setup();
+
+    Serial.println(" [APP] Initial Free memory: " + String(esp_get_free_heap_size()) + " bytes");
     initializeBLEAdvertisement();
+    Serial.println(" [APP] After BLE init Free memory: " + String(esp_get_free_heap_size()) + " bytes");
     // establishConnection();
 }
 
 void loop()
 {
-    if (WiFi.status() != WL_CONNECTED)
+    switch (Workflow::getState())
     {
-        connectToWiFi();
+    case BLE_ADVERTISING:
+    {
+        BuiltInLed::toggle();
+        delay(500);
     }
+    break;
+
+    case BLE_PAIRED:
+    {
+        BuiltInLed::blink(250, 3, LOW);
+        delay(500);
+    }
+    break;
+
+    case WIFI_CREDENTIALS_RECEIVED:
+    {
+        auto wifiTuple = getWifiTuple();
+        ssid = std::get<SSID_IDX>(wifiTuple);
+        password = std::get<PWD_IDX>(wifiTuple);
+
+        // Free BLE resource stack prior to
+        // activating WiFi stack
+        BLEDevice::deinit(true);
+        free(nullptr);
+        Serial.println(" [APP] After BLE deinit Free memory: " + String(esp_get_free_heap_size()) + " bytes");
+
+        connectToWiFi(ssid, password);
+        Serial.println(" [APP] After Wifi init Free memory: " + String(esp_get_free_heap_size()) + " bytes");
+        establishConnection();
+    }
+    break;
+
+    default:
+    {
+        if (WiFi.status() != WL_CONNECTED)
+        {
+            connectToWiFi(ssid, password);
+        }
 #ifndef IOT_CONFIG_USE_X509_CERT
-    else if (sasToken.IsExpired())
-    {
-        AzLogger.Info("SAS token expired; reconnecting with a new one.");
-        (void)esp_mqtt_client_destroy(mqtt_client);
-        initializeMqttClient();
-    }
+        else if (sasToken.IsExpired())
+        {
+            Logger.Info("SAS token expired; reconnecting with a new one.");
+            (void)esp_mqtt_client_destroy(mqtt_client);
+            initializeMqttClient();
+        }
 #endif
-    else if (millis() > next_telemetry_send_time_ms)
-    {
-        sendTelemetry();
-        next_telemetry_send_time_ms = millis() + TELEMETRY_FREQUENCY_MILLISECS;
+        else if (millis() > next_telemetry_send_time_ms)
+        {
+            sendTelemetry();
+            next_telemetry_send_time_ms = millis() + TELEMETRY_FREQUENCY_MILLISECS;
+        }
+    }
+    break;
     }
 }

@@ -3,7 +3,8 @@
 enum WorkflowState
 {
     NONE,
-    BLE_WAITING_TO_PAIR,
+    WF_IDLE,
+    BLE_ADVERTISING,
     BLE_PAIRED,
     WIFI_CREDENTIALS_RECEIVED,
     WIFI_CONNECTED,
