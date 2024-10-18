@@ -53,11 +53,11 @@
 #endif // IOT_CONFIG_USE_X509_CERT
 
 // Azure IoT
-#define IOT_CONFIG_IOTHUB_FQDN "[your Azure IoT host name].azure-devices.net"
+#define IOT_CONFIG_IOTHUB_FQDN "pgotchi-dev-east-iothub.azure-devices.net"
 #define IOT_CONFIG_DEVICE_ID "Device ID"
 // Use device key if not using certificates
 #ifndef IOT_CONFIG_USE_X509_CERT
-#define IOT_CONFIG_DEVICE_KEY "Device Key"
+#define IOT_CONFIG_DEVICE_KEY "P3vDsXMp97MrT8WX+VmJLSmMJn5JlkHeeAIoTHW9Dgg="
 #endif // IOT_CONFIG_USE_X509_CERT
 
 // Publish 1 message every 2 seconds
