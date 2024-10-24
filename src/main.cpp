@@ -24,6 +24,7 @@
 #include <AzureIotHubConfigs.h>
 
 // Additional helpers and utils
+#include <macros.h>
 #include <BuiltInLed.h>
 #include <GSON.h>
 #include <SerialLogger.h>
@@ -34,7 +35,6 @@
 #define AZURE_SDK_CLIENT_USER_AGENT "c%2F" AZ_SDK_VERSION_STRING "(ard;esp32)"
 
 // Utility macros and defines
-#define sizeofarray(a) (sizeof(a) / sizeof(a[0]))
 #define NTP_SERVERS "pool.ntp.org", "time.nist.gov"
 #define MQTT_QOS1 1
 #define DO_NOT_RETAIN_MSG 0

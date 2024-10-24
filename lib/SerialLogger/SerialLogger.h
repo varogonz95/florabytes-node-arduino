@@ -14,7 +14,7 @@ class SerialLogger
 {
 public:
   SerialLogger();
-  static void Begin(unsigned long baudRate);
+  static void Begin(unsigned long baudRate = SERIAL_LOGGER_BAUD_RATE);
   void Info(String message);
   void Error(String message);
 };
