@@ -23,6 +23,9 @@
 #include <AzIoTSasToken.h>
 #include <AzureIotHubConfigs.h>
 
+// Pgotchi APIs
+#include <pgotchi_api_client.h>
+
 // Additional helpers and utils
 #include <macros.h>
 #include <BuiltInLed.h>
@@ -58,14 +61,16 @@
 // Translate iot_configs.h defines into variables used by the sample
 static String ssid = IOT_CONFIG_WIFI_SSID;
 static String password = IOT_CONFIG_WIFI_PASSWORD;
-static const char *device_id = WiFi.macAddress().c_str();
+static String device_id = IOT_CONFIG_DEVICE_ID;
 static const char *host = IOT_CONFIG_IOTHUB_FQDN;
 static const char *mqtt_broker_uri = "mqtts://" IOT_CONFIG_IOTHUB_FQDN;
 static const int mqtt_port = AZ_IOT_DEFAULT_MQTT_CONNECT_PORT;
 
-// Memory allocated for the sample's variables and structures.
+// Memory allocated for variables and structures.
 static esp_mqtt_client_handle_t mqtt_client;
 static az_iot_hub_client client;
+static BLEServer *pServer = nullptr;
+static BLEService *pService = nullptr;
 
 static char mqtt_client_id[128];
 static char mqtt_username[128];
@@ -168,6 +173,12 @@ static void initializeTime()
     Logger.Info("Time initialized!");
 }
 
+static void registerDevice(String deviceId)
+{
+    auto httpClient = new PgotchiApiClient();
+    httpClient->RegisterDevice(device_id);
+}
+
 void receivedCallback(char *topic, byte *payload, unsigned int length)
 {
     Logger.Info("Received [");
@@ -259,30 +270,34 @@ static esp_err_t mqtt_event_handler(esp_mqtt_event_handle_t event)
 
 static void initializeIoTHubClient()
 {
+    String error;
+    auto device_id_chr = device_id.c_str();
     if (az_result_failed(az_iot_hub_client_init(
             &client,
             az_span_create((uint8_t *)host, strlen(host)),
-            az_span_create((uint8_t *)device_id, strlen(device_id)),
+            az_span_create((uint8_t *)device_id_chr, strlen(device_id_chr)),
             NULL)))
     {
-        Logger.Error("Failed initializing Azure IoT Hub client");
-        throw std::runtime_error("");
+        error = "Failed initializing Azure IoT Hub client";
     }
 
     size_t client_id_length;
     if (az_result_failed(az_iot_hub_client_get_client_id(
             &client, mqtt_client_id, sizeof(mqtt_client_id) - 1, &client_id_length)))
     {
-        Logger.Error("Failed getting client id");
-        throw std::runtime_error("");
+        error = "Failed getting client id";
     }
 
     // Get the MQTT user name used to connect to IoT Hub
     if (az_result_failed(az_iot_hub_client_get_user_name(
             &client, mqtt_username, sizeofarray(mqtt_username), NULL)))
     {
-        Logger.Error("Failed to get MQTT clientId, return code");
-        throw std::runtime_error("");
+        error = "Failed to get MQTT clientId, return code";
+    }
+
+    if (!error.isEmpty())
+    {
+        throw std::runtime_error(error.c_str());
     }
 
     Logger.Info("Client ID: " + String(mqtt_client_id));
@@ -379,7 +394,7 @@ static uint32_t getEpochTimeInSecs() { return (uint32_t)time(NULL); }
 static void establishConnection()
 {
     initializeTime();
-    Serial.println(" [APP] After Time init Free memory: " + String(esp_get_free_heap_size()) + " bytes");
+    registerDevice(device_id);
     initializeIoTHubClient();
     (void)initializeMqttClient();
 }
@@ -425,14 +440,13 @@ static void sendTelemetry()
     }
 }
 
-static BLEServer *pServer = nullptr;
-static BLEService *pService = nullptr;
-
 static void initializeBLEAdvertisement()
 {
-    Serial.println("Initializing BLE service.");
-    BLEDevice::init("FloraBytes (" + std::string(device_id) + ")");
+    device_id = WiFi.macAddress();
+    String bleDeviceName = "FloraBytes (" + device_id + ")";
+    BLEDevice::init(bleDeviceName.c_str());
 
+    Serial.println("Initializing BLE service.");
     pServer = BLEDevice::createServer();
     pService = pServer->createService(BLE_SERVICE_UUID);
 
@@ -462,71 +476,77 @@ static void initializeBLEAdvertisement()
 
 void setup()
 {
-    Logger.Begin(SERIAL_LOGGER_BAUD_RATE);
     BuiltInLed::setup();
+    Logger.Begin(SERIAL_LOGGER_BAUD_RATE);
 
-    Serial.println(" [APP] Initial Free memory: " + String(esp_get_free_heap_size()) + " bytes");
     initializeBLEAdvertisement();
-    Serial.println(" [APP] After BLE init Free memory: " + String(esp_get_free_heap_size()) + " bytes");
     // establishConnection();
 }
 
 void loop()
 {
-    switch (Workflow::getState())
+    try
     {
-    case BLE_ADVERTISING:
-    {
-        BuiltInLed::toggle();
-        delay(500);
-    }
-    break;
-
-    case BLE_PAIRED:
-    {
-        BuiltInLed::blink(250, 3, LOW);
-        delay(500);
-    }
-    break;
-
-    case WIFI_CREDENTIALS_RECEIVED:
-    {
-        auto wifiTuple = getWifiTuple();
-        ssid = std::get<SSID_IDX>(wifiTuple);
-        password = std::get<PWD_IDX>(wifiTuple);
-
-        // Free BLE resource stack prior to
-        // activating WiFi stack
-        BLEDevice::deinit(true);
-        free(nullptr);
-        Serial.println(" [APP] After BLE deinit Free memory: " + String(esp_get_free_heap_size()) + " bytes");
-
-        connectToWiFi(ssid, password);
-        Serial.println(" [APP] After Wifi init Free memory: " + String(esp_get_free_heap_size()) + " bytes");
-        establishConnection();
-    }
-    break;
-
-    default:
-    {
-        if (WiFi.status() != WL_CONNECTED)
+        switch (Workflow::getState())
         {
+        case BLE_ADVERTISING:
+        {
+            BuiltInLed::toggle();
+            delay(500);
+        }
+        break;
+
+        case BLE_PAIRED:
+        {
+            BuiltInLed::blink(250, 3, LOW);
+            delay(500);
+        }
+        break;
+
+        case WIFI_CREDENTIALS_RECEIVED:
+        {
+            auto wifiTuple = getWifiTuple();
+            ssid = std::get<SSID_IDX>(wifiTuple);
+            password = std::get<PWD_IDX>(wifiTuple);
+
+            // Free BLE resource stack prior to
+            // activating WiFi stack
+            BLEDevice::deinit(true);
+            free(nullptr);
+
             connectToWiFi(ssid, password);
+            establishConnection();
         }
-#ifndef IOT_CONFIG_USE_X509_CERT
-        else if (sasToken.IsExpired())
+        break;
+
+        default:
         {
-            Logger.Info("SAS token expired; reconnecting with a new one.");
-            (void)esp_mqtt_client_destroy(mqtt_client);
-            initializeMqttClient();
+            delay(1000);
+            Logger.Info("Device in IDLE.");
+//             if (WiFi.status() != WL_CONNECTED)
+//             {
+//                 connectToWiFi(ssid, password);
+//             }
+// #ifndef IOT_CONFIG_USE_X509_CERT
+//             else if (sasToken.IsExpired())
+//             {
+//                 Logger.Info("SAS token expired; reconnecting with a new one.");
+//                 (void)esp_mqtt_client_destroy(mqtt_client);
+//                 initializeMqttClient();
+//             }
+// #endif
+//             else if (millis() > next_telemetry_send_time_ms)
+//             {
+//                 sendTelemetry();
+//                 next_telemetry_send_time_ms = millis() + TELEMETRY_FREQUENCY_MILLISECS;
+//             }
         }
-#endif
-        else if (millis() > next_telemetry_send_time_ms)
-        {
-            sendTelemetry();
-            next_telemetry_send_time_ms = millis() + TELEMETRY_FREQUENCY_MILLISECS;
+        break;
         }
     }
-    break;
+    catch (const std::exception &e)
+    {
+        Logger.Error(e.what());
+        throw;
     }
 }
