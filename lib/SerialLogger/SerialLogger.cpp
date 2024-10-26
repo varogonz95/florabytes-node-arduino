@@ -59,11 +59,12 @@ void SerialLogger::Info(String message)
   Serial.println(message);
 }
 
-void SerialLogger::Error(String message)
+void SerialLogger::Error(String message, bool throwErr)
 {
   writeTime();
   Serial.print(" [ERROR] ");
   Serial.println(message);
+  if (throwErr) throw std::runtime_error(message.c_str());
 }
 
 SerialLogger Logger;
