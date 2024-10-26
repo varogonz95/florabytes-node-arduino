@@ -395,8 +395,8 @@ static void establishConnection()
 {
     initializeTime();
     registerDevice(device_id);
-    initializeIoTHubClient();
-    (void)initializeMqttClient();
+    // initializeIoTHubClient();
+    // (void)initializeMqttClient();
 }
 
 static void generateTelemetryPayload()
