@@ -62,6 +62,7 @@
 static String ssid = IOT_CONFIG_WIFI_SSID;
 static String password = IOT_CONFIG_WIFI_PASSWORD;
 static String device_id = IOT_CONFIG_DEVICE_ID;
+static String device_key = IOT_CONFIG_DEVICE_KEY;
 static const char *host = IOT_CONFIG_IOTHUB_FQDN;
 static const char *mqtt_broker_uri = "mqtts://" IOT_CONFIG_IOTHUB_FQDN;
 static const int mqtt_port = AZ_IOT_DEFAULT_MQTT_CONNECT_PORT;
@@ -84,15 +85,6 @@ static String telemetry_payload = "{}";
 #define INCOMING_DATA_BUFFER_SIZE 128
 static char incoming_data[INCOMING_DATA_BUFFER_SIZE];
 
-// Auxiliary functions
-#ifndef IOT_CONFIG_USE_X509_CERT
-static AzIoTSasToken sasToken(
-    &client,
-    AZ_SPAN_FROM_STR(IOT_CONFIG_DEVICE_KEY),
-    AZ_SPAN_FROM_BUFFER(sas_signature_buffer),
-    AZ_SPAN_FROM_BUFFER(mqtt_password));
-#endif // IOT_CONFIG_USE_X509_CERT
-
 static std::tuple<String, String> getWifiTuple()
 {
     auto wfDataPtr = Workflow::getData();
@@ -114,6 +106,7 @@ static std::tuple<String, String> getWifiTuple()
 
     auto ssid = parser["Ssid"].toString();
     auto pwd = parser["Password"].toString();
+    // parser.reset();
 
     return std::make_tuple(ssid, pwd);
 }
@@ -175,8 +168,21 @@ static void initializeTime()
 
 static void registerDevice(String deviceId)
 {
-    auto httpClient = new PgotchiApiClient();
-    httpClient->RegisterDevice(device_id);
+    auto pgotchiApi = new PgotchiApiClient();
+    auto symmetricKeys = pgotchiApi->RegisterDevice(device_id);
+
+    if (!symmetricKeys[0].isEmpty())
+    {
+        device_key = symmetricKeys[0];
+    }
+    else if (!symmetricKeys[1].isEmpty())
+    {
+        device_key = symmetricKeys[1];
+    }
+    else
+    {
+        Logger.Error("Both Device Symmetric keys are empty.", true);
+    }
 }
 
 void receivedCallback(char *topic, byte *payload, unsigned int length)
@@ -270,7 +276,6 @@ static esp_err_t mqtt_event_handler(esp_mqtt_event_handle_t event)
 
 static void initializeIoTHubClient()
 {
-    String error;
     auto device_id_chr = device_id.c_str();
     if (az_result_failed(az_iot_hub_client_init(
             &client,
@@ -278,26 +283,21 @@ static void initializeIoTHubClient()
             az_span_create((uint8_t *)device_id_chr, strlen(device_id_chr)),
             NULL)))
     {
-        error = "Failed initializing Azure IoT Hub client";
+        Logger.Error("Failed initializing Azure IoT Hub client", true);
     }
 
     size_t client_id_length;
     if (az_result_failed(az_iot_hub_client_get_client_id(
             &client, mqtt_client_id, sizeof(mqtt_client_id) - 1, &client_id_length)))
     {
-        error = "Failed getting client id";
+        Logger.Error("Failed getting client id", true);
     }
 
     // Get the MQTT user name used to connect to IoT Hub
     if (az_result_failed(az_iot_hub_client_get_user_name(
             &client, mqtt_username, sizeofarray(mqtt_username), NULL)))
     {
-        error = "Failed to get MQTT clientId, return code";
-    }
-
-    if (!error.isEmpty())
-    {
-        throw std::runtime_error(error.c_str());
+        Logger.Error("Failed to get MQTT clientId, return code", true);
     }
 
     Logger.Info("Client ID: " + String(mqtt_client_id));
@@ -307,6 +307,14 @@ static void initializeIoTHubClient()
 static int initializeMqttClient()
 {
 #ifndef IOT_CONFIG_USE_X509_CERT
+    auto device_key_chr = strchr(device_key.c_str(), device_key.length());
+    Logger.Info("Device Key: " + String(device_key_chr));
+    AzIoTSasToken sasToken(
+        &client,
+        az_span_create_from_str(device_key_chr),
+        AZ_SPAN_FROM_BUFFER(sas_signature_buffer),
+        AZ_SPAN_FROM_BUFFER(mqtt_password));
+
     if (sasToken.Generate(SAS_TOKEN_DURATION_IN_MINUTES) != 0)
     {
         Logger.Error("Failed generating SAS token");
@@ -395,8 +403,8 @@ static void establishConnection()
 {
     initializeTime();
     registerDevice(device_id);
-    // initializeIoTHubClient();
-    // (void)initializeMqttClient();
+    initializeIoTHubClient();
+    (void)initializeMqttClient();
 }
 
 static void generateTelemetryPayload()
@@ -523,23 +531,23 @@ void loop()
         {
             delay(1000);
             Logger.Info("Device in IDLE.");
-//             if (WiFi.status() != WL_CONNECTED)
-//             {
-//                 connectToWiFi(ssid, password);
-//             }
-// #ifndef IOT_CONFIG_USE_X509_CERT
-//             else if (sasToken.IsExpired())
-//             {
-//                 Logger.Info("SAS token expired; reconnecting with a new one.");
-//                 (void)esp_mqtt_client_destroy(mqtt_client);
-//                 initializeMqttClient();
-//             }
-// #endif
-//             else if (millis() > next_telemetry_send_time_ms)
-//             {
-//                 sendTelemetry();
-//                 next_telemetry_send_time_ms = millis() + TELEMETRY_FREQUENCY_MILLISECS;
-//             }
+            //             if (WiFi.status() != WL_CONNECTED)
+            //             {
+            //                 connectToWiFi(ssid, password);
+            //             }
+            // #ifndef IOT_CONFIG_USE_X509_CERT
+            //             else if (sasToken.IsExpired())
+            //             {
+            //                 Logger.Info("SAS token expired; reconnecting with a new one.");
+            //                 (void)esp_mqtt_client_destroy(mqtt_client);
+            //                 initializeMqttClient();
+            //             }
+            // #endif
+            //             else if (millis() > next_telemetry_send_time_ms)
+            //             {
+            //                 sendTelemetry();
+            //                 next_telemetry_send_time_ms = millis() + TELEMETRY_FREQUENCY_MILLISECS;
+            //             }
         }
         break;
         }

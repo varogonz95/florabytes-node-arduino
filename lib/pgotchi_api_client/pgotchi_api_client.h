@@ -17,8 +17,7 @@ private:
 public:
     PgotchiApiClient();
 
-    void RegisterDevice(String deviceId);
-    void RegisterDevice(String deviceId, std::map<std::string, std::string> properties);
+    String* RegisterDevice(String deviceId);
 
     ~PgotchiApiClient();
 };
@@ -30,7 +29,7 @@ inline PgotchiApiClient::PgotchiApiClient()
     m_http_client = new HTTPClient();
 }
 
-inline void PgotchiApiClient::RegisterDevice(String deviceId)
+inline String* PgotchiApiClient::RegisterDevice(String deviceId)
 {
     bool hasClientBegun = false;
     String url = String(m_base_url) + "Device";
@@ -51,52 +50,40 @@ inline void PgotchiApiClient::RegisterDevice(String deviceId)
     const char *device_id_chr = deviceId.c_str();
     char buffer[(fmt_template.length()) + (deviceId.length())];
     sprintf(buffer, fmt_template.c_str(), deviceId.c_str());
-    String payload(buffer);
+    String request_payload(buffer);
 
     Logger.Info("Performing Http request...");
     Logger.Info("POST " + url);
-    Logger.Info("Request-Body: " + payload);
+    Logger.Info("Request-Body: " + request_payload);
     delay(100);
 
-    m_http_client->addHeader("Content-Type", "application/json");
-    auto http_response = m_http_client->POST(payload);
+    m_http_client->addHeader("Content-Type", "application/json;charset=utf8");
+    auto http_status_code = m_http_client->POST(request_payload);
     delay(100);
 
-    Logger.Info("Http response code: " + http_response);
-    if (http_response < 200 || http_response > 201)
+    Logger.Info("Http response code: " + http_status_code);
+    if (http_status_code < 200 || http_status_code > 201)
     {
-        Logger.Error("Http Error: " + String(http_response), true);
+        auto err = m_http_client->errorToString(http_status_code);
+        Logger.Error("Http Error: " + err, true);
     }
 
-    // auto response_size = m_http_client->getSize();
-    // auto stream = m_http_client->getStream();
-    // char *response_buffer = (char *)malloc(sizeof(char) * response_size);
-    // Logger.Info("Content-Length: " + response_size);
-
-    // if (response_buffer == nullptr)
-    // {
-    //     Logger.Error("Could not allocate memory for HTTP response", true);
-    // }
-
-    // auto chars = stream.readBytes(response_buffer, response_size);
-    // m_http_client->end();
-
-    // if (chars == 0)
-    // {
-    //     Logger.Error("Could not read Http response from stream.", true);
-    // }
-
-    delay(100);
-    auto response_data = m_http_client->getString();
+    auto response_payload = m_http_client->getString();
     m_http_client->end();
-    Logger.Info("Response: " + response_data);
+    Logger.Info("Payload: " + response_payload);
 
-    // std::string json(response_buffer, response_buffer + response_size);
-    // Logger.Info("Response-Body: " + String(chars));
-}
+    GSON::Parser parser;
+    parser.parse(response_payload);
 
-inline void PgotchiApiClient::RegisterDevice(String deviceId, std::map<std::string, std::string> properties)
-{
+    if (parser.hasError())
+    {
+        Logger.Error("Could not parse RegisterDevice response. Reason: " + String(parser.readError()), true);
+    }
+    
+    auto result = new String[2] {parser["symmetricPrimaryKey"], parser["symmetricSecondaryKey"]};
+    // parser.reset();
+
+    return result;
 }
 
 inline PgotchiApiClient::~PgotchiApiClient()
