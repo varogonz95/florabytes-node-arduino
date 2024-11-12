@@ -29,9 +29,9 @@
 // Additional helpers and utils
 #include <macros.h>
 #include <BuiltInLed.h>
-#include <GSON.h>
 #include <SerialLogger.h>
 #include <Workflow.h>
+#include <WifiWorkflow.h>
 
 // When developing for your own Arduino-based platform,
 // please follow the format '(ard;<platform>)'.
@@ -50,9 +50,7 @@
 #define GMT_OFFSET_SECS (PST_TIME_ZONE * 3600)
 #define GMT_OFFSET_SECS_DST ((PST_TIME_ZONE + PST_TIME_ZONE_DAYLIGHT_SAVINGS_DIFF) * 3600)
 
-// BLE Advertised services defines
-#define BLE_SERVICE_UUID "0000181c-0000-1000-8000-00805f9b34fb"
-#define BLE_CHARACTERISTIC_UUID "00002a9f-0000-1000-8000-00805f9b34fb"
+
 
 // Wifi stuff
 #define SSID_IDX 0
@@ -62,7 +60,7 @@
 static String ssid = IOT_CONFIG_WIFI_SSID;
 static String password = IOT_CONFIG_WIFI_PASSWORD;
 static String device_id = IOT_CONFIG_DEVICE_ID;
-static String device_key = IOT_CONFIG_DEVICE_KEY;
+static char *device_key = IOT_CONFIG_DEVICE_KEY;
 static const char *host = IOT_CONFIG_IOTHUB_FQDN;
 static const char *mqtt_broker_uri = "mqtts://" IOT_CONFIG_IOTHUB_FQDN;
 static const int mqtt_port = AZ_IOT_DEFAULT_MQTT_CONNECT_PORT;
@@ -85,68 +83,35 @@ static String telemetry_payload = "{}";
 #define INCOMING_DATA_BUFFER_SIZE 128
 static char incoming_data[INCOMING_DATA_BUFFER_SIZE];
 
-static std::tuple<String, String> getWifiTuple()
+static void setWifiCredentials()
 {
-    auto wfDataPtr = Workflow::getData();
-    auto rawData = wfDataPtr.get();
+    auto data_ptr = Workflow::getData();
+    auto data_bytes = data_ptr.get();
     auto len = Workflow::getDataLength();
-    std::string wifiJson(rawData, rawData + len);
-    auto rawJson = wifiJson.c_str();
-    Serial.printf("Wifi Credentials received:\n%s\n", rawJson);
 
-    GSON::Parser parser;
-    parser.parse(rawJson);
-    wfDataPtr.reset();
+    std::string wifi_json_str(data_bytes, data_bytes + len);
+    String wifi_json_string(wifi_json_str.c_str());
 
-    if (parser.hasError())
+    Logger.Info("Wifi Credentials received: ");
+    Serial.println(wifi_json_string);
+
+    JSONVar json = null;
+    try
     {
-        Serial.printf("Could not parse WiFi credentials. Reason: %s\n", parser.readError());
+        json = JSON.parse(wifi_json_string);
+        ssid = (std::remove_const<const char>::type *)((const char *)json["Ssid"]);
+        password = (std::remove_const<const char>::type *)((const char *)json["Password"]);
+
+        Logger.Info("Setting Ssid = ");
+        Serial.println(ssid);
+        Logger.Info("Setting Password = ");
+        Serial.println(password);
+    }
+    catch (const std::exception &e)
+    {
+        Serial.printf("Could not parse WiFi credentials. Reason: %s\n", e.what());
         throw std::runtime_error("Could not parse WiFi credentials.");
     }
-
-    auto ssid = parser["Ssid"].toString();
-    auto pwd = parser["Password"].toString();
-    // parser.reset();
-
-    return std::make_tuple(ssid, pwd);
-}
-
-static void connectToWiFi(String ssid, String password)
-{
-    Logger.Info("Connecting to WIFI SSID " + ssid);
-
-    WiFi.mode(WIFI_STA);
-    WiFi.disconnect();
-    delay(100);
-
-    WiFi.begin(ssid, password);
-    const uint max_retries = 5;
-    const uint conn_check_cycle = 500;
-    uint retriesCount = max_retries * (1000 / conn_check_cycle);
-    wl_status_t status;
-
-    while (retriesCount-- > 0 || status != WL_CONNECTED)
-    {
-        BuiltInLed::toggle();
-        status = status = WiFi.status();
-
-        Serial.print(".");
-        delay(conn_check_cycle);
-    }
-
-    if (status == WL_CONNECT_FAILED)
-    {
-        BuiltInLed::off();
-        char *fmtError;
-        sprintf(fmtError, "Could not connect to [%s] network. Reason: %s", ssid.c_str(), String(status));
-        throw std::runtime_error(fmtError);
-    }
-
-    Serial.println("");
-    Logger.Info("WiFi connected, IP address: " + WiFi.localIP().toString());
-
-    BuiltInLed::on();
-    Workflow::setState(WIFI_CONNECTED);
 }
 
 static void initializeTime()
@@ -169,19 +134,21 @@ static void initializeTime()
 static void registerDevice(String deviceId)
 {
     auto pgotchiApi = new PgotchiApiClient();
-    auto symmetricKeys = pgotchiApi->RegisterDevice(device_id);
+    auto deviceJson = pgotchiApi->RegisterDevice(device_id);
+    const char *symmetricPrimaryKey = deviceJson["symmetricPrimaryKey"];
+    const char *symmetricSecondaryKey = deviceJson["symmetricSecondaryKey"];
 
-    if (!symmetricKeys[0].isEmpty())
+    if (!sizeof(symmetricPrimaryKey) == 0)
     {
-        device_key = symmetricKeys[0];
+        device_key = (std::remove_const<const char>::type *)symmetricPrimaryKey;
     }
-    else if (!symmetricKeys[1].isEmpty())
+    else if (!sizeof(symmetricSecondaryKey) == 0)
     {
-        device_key = symmetricKeys[1];
+        device_key = (std::remove_const<const char>::type *)symmetricSecondaryKey;
     }
     else
     {
-        Logger.Error("Both Device Symmetric keys are empty.", true);
+        Logger.Error("Both Device Symmetric keys are empty!", true);
     }
 }
 
@@ -307,11 +274,13 @@ static void initializeIoTHubClient()
 static int initializeMqttClient()
 {
 #ifndef IOT_CONFIG_USE_X509_CERT
-    auto device_key_chr = strchr(device_key.c_str(), device_key.length());
-    Logger.Info("Device Key: " + String(device_key_chr));
+    Logger.Info("Device Key: ");
+    Serial.print(device_key);
+    Serial.println();
+
     AzIoTSasToken sasToken(
         &client,
-        az_span_create_from_str(device_key_chr),
+        az_span_create_from_str(device_key),
         AZ_SPAN_FROM_BUFFER(sas_signature_buffer),
         AZ_SPAN_FROM_BUFFER(mqtt_password));
 
@@ -480,14 +449,26 @@ static void initializeBLEAdvertisement()
     Serial.println("BLE service advertisement started.");
 }
 
+static void freeBLEResources()
+{
+    // Free BLE resource stack prior to
+    // activating WiFi stack
+    BLEDevice::deinit(true);
+    free(nullptr);
+}
+
 // Arduino setup and loop main functions.
+
+static WifiWorkflow *wifiWorkflow = new WifiWorkflow();
+static BLEWorkflow *bleWorkflow = new BLEWorkflow();
 
 void setup()
 {
     BuiltInLed::setup();
     Logger.Begin(SERIAL_LOGGER_BAUD_RATE);
-
-    initializeBLEAdvertisement();
+    
+    device_id = WiFi.macAddress();
+    bleWorkflow->startAdvertising(device_id);
     // establishConnection();
 }
 
@@ -513,16 +494,9 @@ void loop()
 
         case WIFI_CREDENTIALS_RECEIVED:
         {
-            auto wifiTuple = getWifiTuple();
-            ssid = std::get<SSID_IDX>(wifiTuple);
-            password = std::get<PWD_IDX>(wifiTuple);
-
-            // Free BLE resource stack prior to
-            // activating WiFi stack
-            BLEDevice::deinit(true);
-            free(nullptr);
-
-            connectToWiFi(ssid, password);
+            setWifiCredentials();
+            freeBLEResources();
+            wifiWorkflow->connect(ssid, password);
             establishConnection();
         }
         break;
