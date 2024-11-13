@@ -12,7 +12,6 @@
 #include <time.h>
 
 // Libraries for MQTT client and WiFi connection
-#include <WiFi.h>
 #include <mqtt_client.h>
 
 // Azure IoT SDK for C includes
@@ -20,17 +19,13 @@
 #include <az_iot.h>
 #include <azure_ca.h>
 #include <az_result_codes.h>
-#include <AzIoTSasToken.h>
-#include <AzureIotHubConfigs.h>
 
-// Pgotchi APIs
-#include <pgotchi_api_client.h>
-
-// Additional helpers and utils
 #include <macros.h>
 #include <BuiltInLed.h>
+#include <DeviceInfo.h>
 #include <SerialLogger.h>
 #include <Workflow.h>
+
 #include <AzClientWorkflow.h>
 #include <BLEWorkflow.h>
 #include <ConnectionWorkflow.h>
@@ -63,7 +58,7 @@
 // Translate iot_configs.h defines into variables used by the sample
 static String ssid = IOT_CONFIG_WIFI_SSID;
 static String password = IOT_CONFIG_WIFI_PASSWORD;
-static String device_id = IOT_CONFIG_DEVICE_ID;
+static String device_id = DeviceInfo::DeviceId;
 static char *device_key = IOT_CONFIG_DEVICE_KEY;
 static const char *host = IOT_CONFIG_IOTHUB_FQDN;
 static const char *mqtt_broker_uri = "mqtts://" IOT_CONFIG_IOTHUB_FQDN;
