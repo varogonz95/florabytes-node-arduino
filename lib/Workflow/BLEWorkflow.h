@@ -9,21 +9,19 @@
 #define BLE_SERVICE_UUID "0000181c-0000-1000-8000-00805f9b34fb"
 #define BLE_CHARACTERISTIC_UUID "00002a9f-0000-1000-8000-00805f9b34fb"
 
-class BLEWorkflow
+namespace BLEWorkflow
 {
-private:
-    /* data */
-public:
-    BLEWorkflow(/* args */) {}
-
+    static BLEServer *pServer = nullptr;
+    static BLEService *pService = nullptr;
+    
     void startAdvertising(String device_id)
     {
         String bleDeviceName = "FloraBytes (" + device_id + ")";
         BLEDevice::init(bleDeviceName.c_str());
 
         Serial.println("Initializing BLE service.");
-        auto pServer = BLEDevice::createServer();
-        auto pService = pServer->createService(BLE_SERVICE_UUID);
+        pServer = BLEDevice::createServer();
+        pService = pServer->createService(BLE_SERVICE_UUID);
 
         BLECharacteristic *pCharacteristic = pService->createCharacteristic(
             BLE_CHARACTERISTIC_UUID,
@@ -47,5 +45,11 @@ public:
         Serial.println("BLE service advertisement started.");
     }
 
-    ~BLEWorkflow() {}
+    void freeResources()
+    {
+        // Free BLE resource stack prior to
+        // activating WiFi stack
+        BLEDevice::deinit(true);
+        free(nullptr);
+    }
 };

@@ -3,13 +3,8 @@
 #include <SerialLogger.h>
 #include <WiFi.h>
 
-class WifiWorkflow
+namespace WifiWorkflow
 {
-private:
-    /* data */
-public:
-    WifiWorkflow(/* args */) {}
-
     void connect(String ssid, String password)
     {
         Logger.Info("Connecting to WIFI SSID ");
@@ -54,6 +49,4 @@ public:
         BuiltInLed::on();
         // Workflow::setState(WIFI_CONNECTED);
     }
-
-    ~WifiWorkflow() {}
 };
