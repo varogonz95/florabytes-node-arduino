@@ -1,3 +1,6 @@
+#ifndef _CUSTOM_BLE_SERVER_CALLBACKS_
+#define _CUSTOM_BLE_SERVER_CALLBACKS_
+
 #include <BLEServer.h>
 
 class CustomBleServerCallbacks : public BLEServerCallbacks
@@ -38,3 +41,5 @@ public:
 
     ~CustomBleServerCallbacks();
 };
+
+#endif

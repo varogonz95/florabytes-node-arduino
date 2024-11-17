@@ -1,5 +1,7 @@
+#ifndef _WORKFLOW_
+#define _WORKFLOW_
+
 #include <memory>
-#include <BLEWorkflow.h>
 
 enum WorkflowState
 {
@@ -27,8 +29,4 @@ public:
     static WorkflowState getState();
 };
 
-class Worflow2
-{
-public:
-    BLEWorkflow *bleWorkflow = new BLEWorkflow();
-};
+#endif

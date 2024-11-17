@@ -1,12 +1,15 @@
+#ifndef _AZ_CLIENT_WORKFLOW_
+#define _AZ_CLIENT_WORKFLOW_
+
 #include <az_core.h>
 #include <az_iot.h>
 #include <azure_ca.h>
 #include <az_result_codes.h>
-#include <AzIoTSasToken.h>
-#include <AzureIotHubConfigs.h>
 #include <mqtt_client.h>
 
 #include <macros.h>
+#include <AzIoTSasToken.h>
+#include <AzureIotHubConfigs.h>
 #include <SerialLogger.h>
 
 #define SAS_TOKEN_DURATION_IN_MINUTES 60
@@ -25,8 +28,8 @@ namespace AzClientWorkflow
     static char incoming_data[INCOMING_DATA_BUFFER_SIZE];
 
     const static char *host = IOT_CONFIG_IOTHUB_FQDN;
-    const static const char *mqtt_broker_uri = "mqtts://" IOT_CONFIG_IOTHUB_FQDN;
-    const static const int mqtt_port = AZ_IOT_DEFAULT_MQTT_CONNECT_PORT;
+    const static char *mqtt_broker_uri = "mqtts://" IOT_CONFIG_IOTHUB_FQDN;
+    const static int mqtt_port = AZ_IOT_DEFAULT_MQTT_CONNECT_PORT;
 
     static void initializeIoTHubClient(String device_id)
     {
@@ -56,6 +59,70 @@ namespace AzClientWorkflow
 
         Logger.Info("Client ID: " + String(mqtt_client_id));
         Logger.Info("Username: " + String(mqtt_username));
+    }
+
+    static esp_err_t mqtt_event_handler(esp_mqtt_event_handle_t event)
+    {
+        switch (event->event_id)
+        {
+            int i, r;
+
+        case MQTT_EVENT_ERROR:
+            Logger.Info("MQTT event MQTT_EVENT_ERROR");
+            break;
+        case MQTT_EVENT_CONNECTED:
+            Logger.Info("MQTT event MQTT_EVENT_CONNECTED");
+
+            r = esp_mqtt_client_subscribe(mqtt_client, AZ_IOT_HUB_CLIENT_C2D_SUBSCRIBE_TOPIC, 1);
+            if (r == -1)
+            {
+                Logger.Error("Could not subscribe for cloud-to-device messages.");
+            }
+            else
+            {
+                Logger.Info("Subscribed for cloud-to-device messages; message id:" + String(r));
+            }
+
+            break;
+        case MQTT_EVENT_DISCONNECTED:
+            Logger.Info("MQTT event MQTT_EVENT_DISCONNECTED");
+            break;
+        case MQTT_EVENT_SUBSCRIBED:
+            Logger.Info("MQTT event MQTT_EVENT_SUBSCRIBED");
+            break;
+        case MQTT_EVENT_UNSUBSCRIBED:
+            Logger.Info("MQTT event MQTT_EVENT_UNSUBSCRIBED");
+            break;
+        case MQTT_EVENT_PUBLISHED:
+            Logger.Info("MQTT event MQTT_EVENT_PUBLISHED");
+            break;
+        case MQTT_EVENT_DATA:
+            Logger.Info("MQTT event MQTT_EVENT_DATA");
+
+            for (i = 0; i < (INCOMING_DATA_BUFFER_SIZE - 1) && i < event->topic_len; i++)
+            {
+                incoming_data[i] = event->topic[i];
+            }
+            incoming_data[i] = '\0';
+            Logger.Info("Topic: " + String(incoming_data));
+
+            for (i = 0; i < (INCOMING_DATA_BUFFER_SIZE - 1) && i < event->data_len; i++)
+            {
+                incoming_data[i] = event->data[i];
+            }
+            incoming_data[i] = '\0';
+            Logger.Info("Data: " + String(incoming_data));
+
+            break;
+        case MQTT_EVENT_BEFORE_CONNECT:
+            Logger.Info("MQTT event MQTT_EVENT_BEFORE_CONNECT");
+            break;
+        default:
+            Logger.Error("MQTT event UNKNOWN");
+            break;
+        }
+
+        return ESP_OK;
     }
 
     static int initializeMqttClient(char *device_key)
@@ -148,69 +215,5 @@ namespace AzClientWorkflow
             return 0;
         }
     }
-
-    static esp_err_t mqtt_event_handler(esp_mqtt_event_handle_t event)
-    {
-        switch (event->event_id)
-        {
-            int i, r;
-
-        case MQTT_EVENT_ERROR:
-            Logger.Info("MQTT event MQTT_EVENT_ERROR");
-            break;
-        case MQTT_EVENT_CONNECTED:
-            Logger.Info("MQTT event MQTT_EVENT_CONNECTED");
-
-            r = esp_mqtt_client_subscribe(mqtt_client, AZ_IOT_HUB_CLIENT_C2D_SUBSCRIBE_TOPIC, 1);
-            if (r == -1)
-            {
-                Logger.Error("Could not subscribe for cloud-to-device messages.");
-            }
-            else
-            {
-                Logger.Info("Subscribed for cloud-to-device messages; message id:" + String(r));
-            }
-
-            break;
-        case MQTT_EVENT_DISCONNECTED:
-            Logger.Info("MQTT event MQTT_EVENT_DISCONNECTED");
-            break;
-        case MQTT_EVENT_SUBSCRIBED:
-            Logger.Info("MQTT event MQTT_EVENT_SUBSCRIBED");
-            break;
-        case MQTT_EVENT_UNSUBSCRIBED:
-            Logger.Info("MQTT event MQTT_EVENT_UNSUBSCRIBED");
-            break;
-        case MQTT_EVENT_PUBLISHED:
-            Logger.Info("MQTT event MQTT_EVENT_PUBLISHED");
-            break;
-        case MQTT_EVENT_DATA:
-            Logger.Info("MQTT event MQTT_EVENT_DATA");
-
-            for (i = 0; i < (INCOMING_DATA_BUFFER_SIZE - 1) && i < event->topic_len; i++)
-            {
-                incoming_data[i] = event->topic[i];
-            }
-            incoming_data[i] = '\0';
-            Logger.Info("Topic: " + String(incoming_data));
-
-            for (i = 0; i < (INCOMING_DATA_BUFFER_SIZE - 1) && i < event->data_len; i++)
-            {
-                incoming_data[i] = event->data[i];
-            }
-            incoming_data[i] = '\0';
-            Logger.Info("Data: " + String(incoming_data));
-
-            break;
-        case MQTT_EVENT_BEFORE_CONNECT:
-            Logger.Info("MQTT event MQTT_EVENT_BEFORE_CONNECT");
-            break;
-        default:
-            Logger.Error("MQTT event UNKNOWN");
-            break;
-        }
-
-        return ESP_OK;
-    }
-
 };
+#endif

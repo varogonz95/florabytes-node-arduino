@@ -1,3 +1,6 @@
+#ifndef _BLE_WORKFLOW_
+#define _BLE_WORKFLOW_
+
 #include <Arduino.h>
 #include <BLEDevice.h>
 #include <BLEServer.h>
@@ -13,7 +16,7 @@ namespace BLEWorkflow
 {
     static BLEServer *pServer = nullptr;
     static BLEService *pService = nullptr;
-    
+
     void startAdvertising(String device_id)
     {
         String bleDeviceName = "FloraBytes (" + device_id + ")";
@@ -53,3 +56,4 @@ namespace BLEWorkflow
         free(nullptr);
     }
 };
+#endif

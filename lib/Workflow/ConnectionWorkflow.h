@@ -1,3 +1,6 @@
+#ifndef _CONNECTION_WORKFLOW_
+#define _CONNECTION_WORKFLOW_
+
 #include <time.h>
 
 #include <BuiltInLed.h>
@@ -43,8 +46,10 @@ namespace ConnectionWorkflow
             return (std::remove_const<const char>::type *)symmetricPrimaryKey;
         else if (!sizeof(symmetricSecondaryKey) == 0)
             return (std::remove_const<const char>::type *)symmetricSecondaryKey;
-            
+
         Logger.Error("Both Device Symmetric keys are empty!", true);
         return nullptr;
     }
 } // namespace ConnectionWorkflow
+
+#endif

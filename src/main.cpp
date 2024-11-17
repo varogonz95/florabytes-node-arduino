@@ -1,8 +1,6 @@
 #include <Arduino.h>
 
 // BLE advertisement libraries
-#include <BLEDevice.h>
-#include <BLEServer.h>
 #include <CustomBleServerCallbacks.h>
 #include <UserDataCharacteristicsCallbacks.h>
 
@@ -17,8 +15,6 @@
 // Azure IoT SDK for C includes
 #include <az_core.h>
 #include <az_iot.h>
-#include <azure_ca.h>
-#include <az_result_codes.h>
 
 #include <macros.h>
 #include <BuiltInLed.h>

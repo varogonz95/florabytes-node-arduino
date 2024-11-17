@@ -1,3 +1,6 @@
+#ifndef _WIFI_WORKFLOW_
+#define _WIFI_WORKFLOW_
+
 #include <Arduino.h>
 #include <BuiltInLed.h>
 #include <SerialLogger.h>
@@ -50,3 +53,5 @@ namespace WifiWorkflow
         // Workflow::setState(WIFI_CONNECTED);
     }
 };
+
+#endif

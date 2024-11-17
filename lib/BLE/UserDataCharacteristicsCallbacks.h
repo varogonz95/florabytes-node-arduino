@@ -1,3 +1,6 @@
+#ifndef _USER_DATA_CHARACTERISTICS_CALLBACKS_
+#define _USER_DATA_CHARACTERISTICS_CALLBACKS_
+
 #include <BLECharacteristic.h>
 
 class UserDataCharacteristicsCallbacks : public BLECharacteristicCallbacks
@@ -47,3 +50,5 @@ public:
 
     ~UserDataCharacteristicsCallbacks();
 };
+
+#endif

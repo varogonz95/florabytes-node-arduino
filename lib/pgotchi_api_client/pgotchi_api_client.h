@@ -1,9 +1,11 @@
+#ifndef _PGOTCHI_API_CLIENT_
+#define _PGOTCHI_API_CLIENT_
+
 #include <map>
 #include <Arduino_JSON.h>
 #include <HTTPClient.h>
 
 #include <SerialLogger.h>
-#include <azurecert.h>
 
 #include "pgotchi_api_client_config.h"
 
@@ -78,3 +80,5 @@ public:
         m_http_client = nullptr;
     }
 };
+
+#endif
