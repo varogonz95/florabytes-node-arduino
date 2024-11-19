@@ -1,5 +1,6 @@
 #include <Arduino.h>
 #include <SerialLogger.h>
+#include <WirelessMutex.h>
 #include <Workflow.h>
 
 #include "UserDataCharacteristicsCallbacks.h"
@@ -16,7 +17,8 @@ void UserDataCharacteristicsCallbacks::onWrite(BLECharacteristic *pCharacteristi
     auto rawData = param->write.value;
     auto len = param->write.len;
     Workflow::setData(rawData, len);
-    Workflow::setState(WIFI_CREDENTIALS_RECEIVED);
+    xSemaphoreGive(xWirelessMutex);
+    // Workflow::setState(WIFI_CREDENTIALS_RECEIVED);
 }
 
 void UserDataCharacteristicsCallbacks::onWrite(BLECharacteristic *pCharacteristic) {}

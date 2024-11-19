@@ -27,6 +27,7 @@
 #include <ConnectionWorkflow.h>
 #include <TelemetryWorkflow.h>
 #include <WifiWorkflow.h>
+#include <WirelessMutex.h>
 
 // When developing for your own Arduino-based platform,
 // please follow the format '(ard;<platform>)'.
@@ -176,6 +177,9 @@ void setup()
     
     device_id = WiFi.macAddress();
     BLEWorkflow::startAdvertising(device_id);
+
+    xSemaphoreTake(xWirelessMutex, portMAX_DELAY);
+
     // establishConnection();
 }
 
