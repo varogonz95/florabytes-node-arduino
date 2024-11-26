@@ -8,7 +8,7 @@
 
 namespace WifiWorkflow
 {
-    void connect(String ssid, String password)
+    void connect(String ssid, String pwd)
     {
         Logger.Info("Connecting to WIFI SSID ");
         Serial.print(ssid);
@@ -18,7 +18,7 @@ namespace WifiWorkflow
         WiFi.disconnect();
         delay(100);
 
-        auto status = WiFi.begin(ssid, password);
+        auto status = WiFi.begin(ssid, pwd);
         if (status == WL_CONNECT_FAILED)
         {
             Logger.Error("Could not connect to ");

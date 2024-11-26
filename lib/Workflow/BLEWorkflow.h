@@ -8,6 +8,8 @@
 #include <CustomBleServerCallbacks.h>
 #include <UserDataCharacteristicsCallbacks.h>
 
+#include <WirelessMutex.h>
+
 // BLE Advertised services defines
 #define BLE_SERVICE_UUID "0000181c-0000-1000-8000-00805f9b34fb"
 #define BLE_CHARACTERISTIC_UUID "00002a9f-0000-1000-8000-00805f9b34fb"

@@ -17,17 +17,16 @@
 #include <az_iot.h>
 
 #include <macros.h>
+#include <ConnectivityTasks.h>
+#include <BluetoothTasks.h>
 #include <BuiltInLed.h>
 #include <DeviceInfo.h>
 #include <SerialLogger.h>
 #include <Workflow.h>
 
 #include <AzClientWorkflow.h>
-#include <BLEWorkflow.h>
 #include <ConnectionWorkflow.h>
 #include <TelemetryWorkflow.h>
-#include <WifiWorkflow.h>
-#include <WirelessMutex.h>
 
 // When developing for your own Arduino-based platform,
 // please follow the format '(ard;<platform>)'.
@@ -45,8 +44,6 @@
 
 #define GMT_OFFSET_SECS (PST_TIME_ZONE * 3600)
 #define GMT_OFFSET_SECS_DST ((PST_TIME_ZONE + PST_TIME_ZONE_DAYLIGHT_SAVINGS_DIFF) * 3600)
-
-
 
 // Wifi stuff
 #define SSID_IDX 0
@@ -76,37 +73,6 @@ static String telemetry_payload = "{}";
 
 #define INCOMING_DATA_BUFFER_SIZE 128
 static char incoming_data[INCOMING_DATA_BUFFER_SIZE];
-
-static void setWifiCredentials()
-{
-    auto data_ptr = Workflow::getData();
-    auto data_bytes = data_ptr.get();
-    auto len = Workflow::getDataLength();
-
-    std::string wifi_json_str(data_bytes, data_bytes + len);
-    String wifi_json_string(wifi_json_str.c_str());
-
-    Logger.Info("Wifi Credentials received: ");
-    Serial.println(wifi_json_string);
-
-    JSONVar json = null;
-    try
-    {
-        json = JSON.parse(wifi_json_string);
-        ssid = (std::remove_const<const char>::type *)((const char *)json["Ssid"]);
-        password = (std::remove_const<const char>::type *)((const char *)json["Password"]);
-
-        Logger.Info("Setting Ssid = ");
-        Serial.println(ssid);
-        Logger.Info("Setting Password = ");
-        Serial.println(password);
-    }
-    catch (const std::exception &e)
-    {
-        Serial.printf("Could not parse WiFi credentials. Reason: %s\n", e.what());
-        throw std::runtime_error("Could not parse WiFi credentials.");
-    }
-}
 
 void receivedCallback(char *topic, byte *payload, unsigned int length)
 {
@@ -167,84 +133,35 @@ static void sendTelemetry()
     }
 }
 
-
 // Arduino setup and loop main functions.
 
 void setup()
 {
     BuiltInLed::setup();
     Logger.Begin(SERIAL_LOGGER_BAUD_RATE);
-    
+
     device_id = WiFi.macAddress();
-    BLEWorkflow::startAdvertising(device_id);
-
-    xSemaphoreTake(xWirelessMutex, portMAX_DELAY);
-
-    // establishConnection();
+    xTaskCreate(bleAdvertisementTask, "BLE Advertising", 1000, &device_id, 1, NULL);
+    xTaskCreate(connectWifiTask, "Wifi Connect", 10000, &device_id, 1, NULL);
 }
 
 void loop()
 {
-    try
-    {
-        switch (Workflow::getState())
-        {
-        case BLE_ADVERTISING:
-        {
-            BuiltInLed::toggle();
-            delay(500);
-        }
-        break;
-
-        case BLE_PAIRED:
-        {
-            BuiltInLed::blink(250, 3, LOW);
-            delay(500);
-        }
-        break;
-
-        case WIFI_CREDENTIALS_RECEIVED:
-        {
-            setWifiCredentials();
-            BLEWorkflow::freeResources();
-            WifiWorkflow::connect(ssid, password);
-            
-            ConnectionWorkflow::initializeTime();
-            device_key = ConnectionWorkflow::registerDevice(device_id);
-
-            AzClientWorkflow::initializeIoTHubClient(device_id);
-            AzClientWorkflow::initializeMqttClient(device_key);
-        }
-        break;
-
-        default:
-        {
-            delay(1000);
-            Logger.Info("Device in IDLE.");
-            //             if (WiFi.status() != WL_CONNECTED)
-            //             {
-            //                 connectToWiFi(ssid, password);
-            //             }
-            // #ifndef IOT_CONFIG_USE_X509_CERT
-            //             else if (sasToken.IsExpired())
-            //             {
-            //                 Logger.Info("SAS token expired; reconnecting with a new one.");
-            //                 (void)esp_mqtt_client_destroy(mqtt_client);
-            //                 initializeMqttClient();
-            //             }
-            // #endif
-            //             else if (millis() > next_telemetry_send_time_ms)
-            //             {
-            //                 sendTelemetry();
-            //                 next_telemetry_send_time_ms = millis() + TELEMETRY_FREQUENCY_MILLISECS;
-            //             }
-        }
-        break;
-        }
-    }
-    catch (const std::exception &e)
-    {
-        Logger.Error(e.what());
-        throw;
-    }
+    //             if (WiFi.status() != WL_CONNECTED)
+    //             {
+    //                 connectToWiFi(ssid, password);
+    //             }
+    // #ifndef IOT_CONFIG_USE_X509_CERT
+    //             else if (sasToken.IsExpired())
+    //             {
+    //                 Logger.Info("SAS token expired; reconnecting with a new one.");
+    //                 (void)esp_mqtt_client_destroy(mqtt_client);
+    //                 initializeMqttClient();
+    //             }
+    // #endif
+    //             else if (millis() > next_telemetry_send_time_ms)
+    //             {
+    //                 sendTelemetry();
+    //                 next_telemetry_send_time_ms = millis() + TELEMETRY_FREQUENCY_MILLISECS;
+    //             }
 }
